@@ -57,6 +57,27 @@ def calcular_opcao_asiatica(S0, K, T, r, sigma, n_sim=10000, steps=252):
     media = np.mean(S, axis=1)
     payoff = np.maximum(media - K, 0)
     return np.exp(-r * T) * np.mean(payoff)
+# Função de Black-Scholes para opção call europeia
+def black_scholes_call(S, K, T, r, sigma):
+    d1 = (np.log(S/K) + (r + 0.5*sigma**2)*T) / (sigma * np.sqrt(T))
+    d2 = d1 - sigma * np.sqrt(T)
+    return S * norm.cdf(d1) - K * np.exp(-r*T) * norm.cdf(d2)
+
+# Volatilidade implícita via método da bisseção
+def calcular_volatilidade_implicita(preco_mercado, S, K, T, r, tol=1e-5, max_iter=100):
+    sigma_low = 0.0001
+    sigma_high = 5.0
+    for i in range(max_iter):
+        sigma_mid = (sigma_low + sigma_high) / 2
+        preco_estimado = black_scholes_call(S, K, T, r, sigma_mid)
+        if abs(preco_estimado - preco_mercado) < tol:
+            return sigma_mid
+        elif preco_estimado > preco_mercado:
+            sigma_high = sigma_mid
+        else:
+            sigma_low = sigma_mid
+    return sigma_mid
+
 
 # Interface Streamlit
 st.title("Calculadora de Opções: Europeia, Americana e Asiática")
