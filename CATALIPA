@@ -1,0 +1,114 @@
+import streamlit as st
+import yfinance as yf
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Funções de cálculo
+
+def capturar_parametros(ticker, periodo='1y'):
+    dados = yf.download(ticker, period=periodo)
+    dados['Retornos'] = np.log(dados['Close'] / dados['Close'].shift(1))
+    dados = dados.dropna()
+    S0 = dados['Close'].iloc[-1].item()
+    mu = dados['Retornos'].mean() * 252
+    sigma = dados['Retornos'].std() * np.sqrt(252)
+    return S0, mu, sigma, dados
+
+
+def monte_carlo_opcao_europeia(S0, K, T, r, sigma, n_sim=10000):
+    Z = np.random.standard_normal(n_sim)
+    ST = S0 * np.exp((r - 0.5 * sigma ** 2) * T + sigma * np.sqrt(T) * Z)
+    payoff = np.maximum(ST - K, 0)
+    return np.exp(-r * T) * np.mean(payoff)
+
+
+def monte_carlo_opcao_asiatica(S0, K, T, r, sigma, n_sim=10000, n_steps=252):
+    dt = T / n_steps
+    payoffs = []
+    for _ in range(n_sim):
+        prices = [S0]
+        for _ in range(n_steps):
+            Z = np.random.normal()
+            St = prices[-1] * np.exp((r - 0.5 * sigma**2) * dt + sigma * np.sqrt(dt) * Z)
+            prices.append(St)
+        media = np.mean(prices)
+        payoffs.append(max(media - K, 0))
+    return np.exp(-r * T) * np.mean(payoffs)
+
+
+def plot_trajetorias(S0, T, r, sigma, n_sim=100, n_steps=252):
+    dt = T / n_steps
+    fig, ax = plt.subplots(figsize=(8, 4))
+    for _ in range(min(n_sim, 50)):
+        prices = [S0]
+        for _ in range(n_steps):
+            Z = np.random.standard_normal()
+            prices.append(prices[-1] * np.exp((r - 0.5 * sigma**2) * dt + sigma * np.sqrt(dt) * Z))
+        ax.plot(prices, alpha=0.6)
+    ax.set_title("Simulação Monte Carlo - Trajetórias de Preço")
+    ax.set_xlabel("Dias")
+    ax.set_ylabel("Preço")
+    ax.grid(True)
+    return fig
+
+# Configuração da página
+st.set_page_config(
+    page_title="Calculadora de Opções", 
+    page_icon="📈", 
+    layout="wide"
+)
+
+# Mensagem de entrada
+st.markdown("""
+# 🎉 Bem-vindo à Calculadora de Opções
+Este aplicativo permite calcular preços de **Opções Europeias** e **Opções Asiáticas** de forma simples e interativa.
+""", unsafe_allow_html=True)
+
+# Seleção de tipo de opção e ticker
+option_type = st.radio(
+    "Selecione o tipo de opção:",
+    ("Opção Europeia", "Opção Asiática")
+)
+
+ticker = st.text_input(
+    "Digite o ticker da ação (ex: AAPL para EUA, ITUB3.SA para Brasil):",
+    value="AAPL"
+)
+
+if st.button("Calcular"):
+    try:
+        S0, mu, sigma, dados = capturar_parametros(ticker)
+        K = S0 * 1.05  # Strike 5% acima do preço atual
+        T = 1.0       # 1 ano até expiração
+        r = 0.04      # Taxa livre de risco fixa
+
+        if option_type == "Opção Europeia":
+            price = monte_carlo_opcao_europeia(S0, K, T, r, sigma)
+        else:
+            price = monte_carlo_opcao_asiatica(S0, K, T, r, sigma)
+
+        # Apresentação dos resultados
+        st.subheader("📊 Resultados")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Preço Atual (S0)", f"R$ {S0:.2f}")
+        col2.metric("Volatilidade (σ)", f"{sigma:.2%}")
+        col3.metric(f"Preço da {option_type}", f"R$ {price:.2f}")
+
+        # Gráfico de histórico de preço
+        st.subheader("📈 Histórico de Preço")
+        fig_hist, ax_hist = plt.subplots(figsize=(8, 3))
+        dados['Close'].plot(ax=ax_hist)
+        ax_hist.set_title(f"Fechamento Diário - {ticker}")
+        ax_hist.set_xlabel("Data")
+        ax_hist.set_ylabel("Preço (R$)")
+        st.pyplot(fig_hist)
+
+        # Opção para simulação de trajetórias
+        if st.checkbox("Mostrar simulações Monte Carlo (trajectórias)":
+            st.subheader("🚀 Simulações Monte Carlo")
+            fig_sim = plot_trajetorias(S0, T, r, sigma)
+            st.pyplot(fig_sim)
+
+    except Exception as e:
+        st.error(f"Erro ao processar o ticker informado: {e}")
